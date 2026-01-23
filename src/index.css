@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-gray-900 text-gray-100 m-0;
+}
+
+/* Custom scrollbar for the timeline */
+.timeline-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.timeline-scroll::-webkit-scrollbar-track {
+  @apply bg-gray-800 rounded;
+}
+
+.timeline-scroll::-webkit-scrollbar-thumb {
+  @apply bg-gray-600 rounded hover:bg-gray-500;
+}
+
+/* Column hover highlight using CSS */
+.time-column {
+  position: relative;
+}
+
+.time-column::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: transparent;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.time-column:hover::before {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Sticky column styling */
+.sticky-column {
+  position: sticky;
+  left: 0;
+  z-index: 20;
+  background: inherit;
+}
