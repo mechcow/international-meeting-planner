@@ -61,6 +61,9 @@ export function TimelineGrid() {
   const [hoveredSlot, setHoveredSlot] = useState<number | null>(null);
   const [editingCity, setEditingCity] = useState<City | null>(null);
   const [firstFutureSlot, setFirstFutureSlot] = useState(() => getFirstFutureSlot(referenceDate));
+  // Mobile tap-to-select state
+  const [tapStart, setTapStart] = useState<number | null>(null);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -113,6 +116,24 @@ export function TimelineGrid() {
     }
   }, []); // Only run on mount
 
+  // Detect touch device on first touch
+  useEffect(() => {
+    const handleTouchStart = () => {
+      setIsTouchDevice(true);
+      // Remove listener after detection
+      window.removeEventListener('touchstart', handleTouchStart);
+    };
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    return () => window.removeEventListener('touchstart', handleTouchStart);
+  }, []);
+
+  // Clear tap start when meeting is cleared
+  useEffect(() => {
+    if (!meeting && tapStart !== null) {
+      // Keep tapStart so user can continue selecting
+    }
+  }, [meeting, tapStart]);
+
   const handleMouseDown = useCallback((slotIndex: number) => {
     setIsDragging(true);
     setDragStart(slotIndex);
@@ -145,6 +166,35 @@ export function TimelineGrid() {
     }
   }, [isDragging, handleMouseUp]);
 
+  // Mobile tap-to-select handler
+  const handleTap = useCallback((slotIndex: number) => {
+    if (tapStart === null) {
+      // First tap - set start point
+      setTapStart(slotIndex);
+      // Clear any existing meeting when starting new selection
+      setMeeting(null);
+    } else {
+      // Second tap - complete selection
+      const startSlot = Math.min(tapStart, slotIndex);
+      const endSlot = Math.max(tapStart, slotIndex);
+      // If same slot tapped, create 1-hour meeting (2 slots)
+      if (startSlot === endSlot) {
+        setMeeting({
+          startSlot,
+          endSlot: Math.min(startSlot + 1, SLOTS_PER_DAY - 1),
+        });
+      } else {
+        setMeeting({ startSlot, endSlot });
+      }
+      setTapStart(null);
+    }
+  }, [tapStart, setMeeting]);
+
+  // Clear tap selection
+  const handleClearTapStart = useCallback(() => {
+    setTapStart(null);
+  }, []);
+
   const isSlotInDragRange = (slotIndex: number) => {
     if (dragStart === null || dragEnd === null) return false;
     const min = Math.min(dragStart, dragEnd);
@@ -156,6 +206,20 @@ export function TimelineGrid() {
     if (!meeting) return false;
     return slotIndex >= meeting.startSlot && slotIndex <= meeting.endSlot;
   };
+
+  const isTapStartSlot = (slotIndex: number) => {
+    return tapStart === slotIndex;
+  };
+
+  // Combined click handler for both desktop and mobile
+  const handleSlotClick = useCallback((slotIndex: number, e: React.MouseEvent | React.TouchEvent) => {
+    // On touch devices, use tap-to-select
+    if (isTouchDevice) {
+      e.preventDefault();
+      handleTap(slotIndex);
+    }
+    // On desktop, mousedown/mouseup handles drag selection
+  }, [isTouchDevice, handleTap]);
 
   if (cities.length === 0) {
     return (
@@ -181,6 +245,18 @@ export function TimelineGrid() {
       onMouseLeave={handleMouseLeave}
       onMouseUp={handleMouseUp}
     >
+      {/* Mobile tap instruction banner */}
+      {isTouchDevice && tapStart !== null && (
+        <div className="bg-blue-600 text-white text-sm px-4 py-2 flex items-center justify-between">
+          <span>Tap another time to complete selection (or same time for 1-hour meeting)</span>
+          <button
+            onClick={handleClearTapStart}
+            className="ml-2 px-2 py-1 bg-blue-500 hover:bg-blue-400 rounded text-xs font-medium"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       <div ref={scrollContainerRef} className="overflow-x-auto timeline-scroll">
         <table
           className="border-collapse"
@@ -251,6 +327,7 @@ export function TimelineGrid() {
                 const isHovered = hoveredSlot === index;
                 const isHalfHour = index % 2 === 1;
                 const isSelected = inDragRange || inMeeting;
+                const isTapStart = isTapStartSlot(index);
                 const heatmapColor = getHeatmapColor(overlapScore, cities.length, isPast);
 
                 return (
@@ -260,12 +337,16 @@ export function TimelineGrid() {
                       isPast ? 'cursor-not-allowed' : 'cursor-crosshair'
                     } ${isHalfHour ? 'border-r-gray-700' : 'border-r-gray-600'
                     } ${isHovered && !isSelected && !isPast ? 'brightness-125' : ''}`}
-                    onMouseDown={() => !isPast && handleMouseDown(index)}
-                    onMouseMove={() => handleMouseMove(index)}
+                    onMouseDown={() => !isPast && !isTouchDevice && handleMouseDown(index)}
+                    onMouseMove={() => !isTouchDevice && handleMouseMove(index)}
+                    onClick={(e) => !isPast && isTouchDevice && handleSlotClick(index, e)}
                   >
                     <div className={`h-10 flex items-center justify-center relative ${heatmapColor}`}>
                       {isSelected && (
                         <div className={`absolute inset-0 ${inDragRange ? 'bg-blue-500/50' : 'bg-blue-600/40'}`} />
+                      )}
+                      {isTapStart && (
+                        <div className="absolute inset-0 bg-blue-400/60 ring-2 ring-blue-400 ring-inset" />
                       )}
                       <span className={`text-[10px] font-bold relative z-10 ${
                         isPast ? 'text-gray-600' : overlapScore === 0 ? 'text-gray-500' : 'text-white'
@@ -322,6 +403,7 @@ export function TimelineGrid() {
                     const isHovered = hoveredSlot === index;
                     const isHalfHour = minutes === 30;
                     const isSelected = inDragRange || inMeeting;
+                    const isTapStart = isTapStartSlot(index);
 
                     let bgColor = 'bg-gray-700';
                     if (isPast) {
@@ -337,8 +419,9 @@ export function TimelineGrid() {
                           isPast ? 'cursor-not-allowed' : 'cursor-crosshair'
                         } ${isHalfHour ? 'border-r-gray-700' : 'border-r-gray-600'
                         } ${isHovered && !isSelected && !isPast ? 'brightness-125' : ''}`}
-                        onMouseDown={() => !isPast && handleMouseDown(index)}
-                        onMouseMove={() => handleMouseMove(index)}
+                        onMouseDown={() => !isPast && !isTouchDevice && handleMouseDown(index)}
+                        onMouseMove={() => !isTouchDevice && handleMouseMove(index)}
+                        onClick={(e) => !isPast && isTouchDevice && handleSlotClick(index, e)}
                       >
                         <div
                           className={`h-12 flex flex-col items-center justify-center relative ${bgColor}`}
@@ -351,6 +434,9 @@ export function TimelineGrid() {
                                   : 'bg-blue-600/40'
                               }`}
                             />
+                          )}
+                          {isTapStart && (
+                            <div className="absolute inset-0 bg-blue-400/60 ring-2 ring-blue-400 ring-inset" />
                           )}
                           <span className={`text-[10px] font-medium leading-tight relative z-10 ${
                             isPast ? 'text-gray-600' : isSelected ? 'text-white' : ''
