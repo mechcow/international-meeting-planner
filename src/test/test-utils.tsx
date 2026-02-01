@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, RenderOptions } from '@testing-library/react';
+import { render } from '@testing-library/react';
+import type { RenderOptions } from '@testing-library/react';
 import { TimezoneProvider } from '../context/TimezoneContext';
 
 // Custom render that wraps components with providers
