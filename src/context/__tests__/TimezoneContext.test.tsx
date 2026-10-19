@@ -211,4 +211,45 @@ describe('TimezoneContext', () => {
       expect(newCity1Index).toBeGreaterThan(newCity2Index);
     });
   });
+
+  describe('holiday jurisdictions', () => {
+    it('should infer subdivisions for stored cities that lack one', () => {
+      const legacy = [
+        { id: 'sydney', name: 'Sydney', timezone: 'Australia/Sydney', countryCode: 'AU', workStart: 9, workEnd: 17 },
+        { id: 'melbourne', name: 'Melbourne', timezone: 'Australia/Sydney', countryCode: 'AU', workStart: 9, workEnd: 17 },
+        { id: 'tokyo', name: 'Tokyo', timezone: 'Asia/Tokyo', countryCode: 'JP', workStart: 9, workEnd: 17 },
+      ];
+      vi.mocked(window.localStorage.getItem).mockReturnValue(JSON.stringify(legacy));
+
+      const { result } = renderHook(() => useTimezone(), { wrapper });
+
+      expect(result.current.cities.map((c) => c.subdivision)).toEqual(['NSW', 'VIC', '']);
+    });
+
+    it('should keep an explicit nationwide choice', () => {
+      const stored = [
+        { id: 'sydney', name: 'Sydney', timezone: 'Australia/Sydney', countryCode: 'AU', subdivision: '', workStart: 9, workEnd: 17 },
+      ];
+      vi.mocked(window.localStorage.getItem).mockReturnValue(JSON.stringify(stored));
+
+      const { result } = renderHook(() => useTimezone(), { wrapper });
+
+      expect(result.current.cities[0].subdivision).toBe('');
+    });
+
+    it('should update a city subdivision', () => {
+      const { result } = renderHook(() => useTimezone(), { wrapper });
+      const id = result.current.cities[0].id;
+
+      act(() => {
+        result.current.updateSubdivision(id, 'CA');
+      });
+      expect(result.current.cities[0].subdivision).toBe('CA');
+
+      act(() => {
+        result.current.updateSubdivision(id, undefined);
+      });
+      expect(result.current.cities[0].subdivision).toBe('');
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '../../test/test-utils';
 import { TimelineGrid } from '../TimelineGrid';
 
@@ -82,7 +82,7 @@ describe('TimelineGrid', () => {
     it('should have working hours edit buttons for each city', () => {
       render(<TimelineGrid />);
 
-      const editButtons = screen.getAllByTitle('Edit working hours');
+      const editButtons = screen.getAllByTitle(/Edit working hours/);
       expect(editButtons).toHaveLength(2);
     });
   });
@@ -134,6 +134,70 @@ describe('TimelineGrid', () => {
       expect(screen.getByRole('table')).toBeInTheDocument();
       expect(screen.getAllByRole('columnheader').length).toBeGreaterThan(0);
       expect(screen.getAllByRole('row').length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('public holidays', () => {
+    const mockCities = [
+      {
+        id: 'london',
+        name: 'London',
+        timezone: 'Europe/London',
+        countryCode: 'GB',
+        subdivision: 'ENG',
+        workStart: 9,
+        workEnd: 17,
+      },
+      {
+        id: 'tokyo',
+        name: 'Tokyo',
+        timezone: 'Asia/Tokyo',
+        countryCode: 'JP',
+        subdivision: '',
+        workStart: 9,
+        workEnd: 17,
+      },
+    ];
+
+    beforeEach(() => {
+      vi.mocked(window.localStorage.getItem).mockReturnValue(JSON.stringify(mockCities));
+      vi.useFakeTimers({ toFake: ['Date'] });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('should show an "Off" badge naming the holiday for cities on holiday', () => {
+      vi.setSystemTime(new Date(2025, 11, 25, 12, 0, 0));
+      render(<TimelineGrid />);
+
+      const badge = screen.getByTestId('holiday-badge-london');
+      expect(badge).toHaveTextContent('Off');
+      expect(badge).toHaveTextContent('Christmas Day');
+      expect(screen.queryByTestId('holiday-badge-tokyo')).not.toBeInTheDocument();
+    });
+
+    it('should show the holiday jurisdiction next to each city', () => {
+      render(<TimelineGrid />);
+
+      expect(screen.getByTitle('Public holidays for ENG, GB')).toHaveTextContent('· ENG');
+      expect(screen.getByTitle('Public holidays for JP')).toHaveTextContent('· JP');
+    });
+
+    it('should mark holiday slots with a tooltip saying the city is off', () => {
+      vi.setSystemTime(new Date(2025, 11, 25, 12, 0, 0));
+      render(<TimelineGrid />);
+
+      const offSlots = screen.getAllByTitle(/Christmas Day: public holiday in London \(ENG, GB\), off/);
+      expect(offSlots.length).toBeGreaterThan(0);
+    });
+
+    it('should not show a badge on a regular working day', () => {
+      vi.setSystemTime(new Date(2025, 2, 12, 12, 0, 0));
+      render(<TimelineGrid />);
+
+      expect(screen.queryByTestId('holiday-badge-london')).not.toBeInTheDocument();
     });
   });
 });

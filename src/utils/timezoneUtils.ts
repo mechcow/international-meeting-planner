@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
 import type { City } from '../types';
-import { isPublicHoliday } from './holidayUtils';
+import { getPublicHoliday } from './holidayUtils';
 
 // Number of slots per day (48 for half-hour increments)
 export const SLOTS_PER_DAY = 48;
@@ -33,17 +33,11 @@ export function isWithinWorkingHours(
   workStart: number,
   workEnd: number,
   date?: Date,
-  countryCode?: string
+  countryCode?: string,
+  subdivision?: string
 ): boolean {
-  if (date) {
-    // Check for weekend
-    if (isWeekend(date)) {
-      return false;
-    }
-    // Check for public holiday
-    if (countryCode && isPublicHoliday(date, countryCode)) {
-      return false;
-    }
+  if (date && getOffReason(date, countryCode, subdivision)) {
+    return false;
   }
 
   if (workStart <= workEnd) {
@@ -53,10 +47,29 @@ export function isWithinWorkingHours(
   return timeDecimal >= workStart || timeDecimal < workEnd;
 }
 
+export type OffReason =
+  | { kind: 'holiday'; name: string }
+  | { kind: 'weekend' };
+
+// Why someone is off for the whole of a local date (public holiday or weekend),
+// or null if it's a normal working day. Holidays take precedence over weekends.
+export function getOffReason(
+  date: Date,
+  countryCode?: string,
+  subdivision?: string
+): OffReason | null {
+  if (countryCode) {
+    const holiday = getPublicHoliday(date, countryCode, subdivision);
+    if (holiday) return { kind: 'holiday', name: holiday.name };
+  }
+  if (isWeekend(date)) return { kind: 'weekend' };
+  return null;
+}
+
 export function calculateOverlapScore(cities: City[], slotIndex: number, date: Date): number {
   return cities.reduce((count, city) => {
     const { timeDecimal, date: localDate } = getSlotInTimezone(date, slotIndex, city.timezone);
-    return count + (isWithinWorkingHours(timeDecimal, city.workStart, city.workEnd, localDate, city.countryCode) ? 1 : 0);
+    return count + (isWithinWorkingHours(timeDecimal, city.workStart, city.workEnd, localDate, city.countryCode, city.subdivision) ? 1 : 0);
   }, 0);
 }
 

@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import { X, Clock } from 'lucide-react';
+import { X, Clock, CalendarOff } from 'lucide-react';
+import { format } from 'date-fns';
 import { useTimezone } from '../context/TimezoneContext';
 import { WorkingHoursModal } from './WorkingHoursModal';
 import {
@@ -7,14 +8,23 @@ import {
   isWithinWorkingHours,
   formatSlot,
   getTimezoneOffset,
+  getOffReason,
   SLOTS_PER_DAY,
 } from '../utils/timezoneUtils';
+import type { OffReason } from '../utils/timezoneUtils';
+import { formatJurisdiction } from '../utils/holidayUtils';
 import type { City } from '../types';
 
 interface SlotData {
   hour: number;
   minutes: number;
   isWorking: boolean;
+  offReason: OffReason | null;
+}
+
+interface CityHoliday {
+  date: string; // e.g. "Thu, Dec 25"
+  name: string;
 }
 
 const SLOT_WIDTH = 44;
@@ -77,35 +87,55 @@ export function TimelineGrid() {
   }, [referenceDate]);
 
   // Pre-compute slot data for all cities and all slots
-  const { citySlotData, overlapScores } = useMemo(() => {
+  const { citySlotData, cityHolidays, overlapScores } = useMemo(() => {
     const citySlotData = new Map<string, SlotData[]>();
+    const cityHolidays = new Map<string, CityHoliday[]>();
     const overlapScores: number[] = new Array(SLOTS_PER_DAY).fill(0);
 
     for (const city of cities) {
       const slots: SlotData[] = [];
+      const holidays: CityHoliday[] = [];
+      // The 24h grid spans at most two local dates per city; look each up once
+      const offReasonByDate = new Map<string, OffReason | null>();
       for (let i = 0; i < SLOTS_PER_DAY; i++) {
         const { hour, minutes, timeDecimal, date } = getSlotInTimezone(
           referenceDate,
           i,
           city.timezone
         );
-        const isWorking = isWithinWorkingHours(
-          timeDecimal,
-          city.workStart,
-          city.workEnd,
-          date,
-          city.countryCode
-        );
-        slots.push({ hour, minutes, isWorking });
+        const dateKey = format(date, 'yyyy-MM-dd');
+        if (!offReasonByDate.has(dateKey)) {
+          const reason = getOffReason(date, city.countryCode, city.subdivision);
+          offReasonByDate.set(dateKey, reason);
+          if (reason?.kind === 'holiday') {
+            holidays.push({ date: format(date, 'EEE, MMM d'), name: reason.name });
+          }
+        }
+        const offReason = offReasonByDate.get(dateKey)!;
+        const isWorking =
+          !offReason && isWithinWorkingHours(timeDecimal, city.workStart, city.workEnd);
+        slots.push({ hour, minutes, isWorking, offReason });
         if (isWorking) {
           overlapScores[i]++;
         }
       }
       citySlotData.set(city.id, slots);
+      cityHolidays.set(city.id, holidays);
     }
 
-    return { citySlotData, overlapScores };
+    return { citySlotData, cityHolidays, overlapScores };
   }, [cities, referenceDate]);
+
+  // Tooltip for the Best Times row, naming anyone off for a public holiday
+  const getHeatmapTitle = (slotIndex: number) => {
+    const summary = `${overlapScores[slotIndex]}/${cities.length} cities in working hours`;
+    const off: string[] = [];
+    for (const city of cities) {
+      const reason = citySlotData.get(city.id)![slotIndex].offReason;
+      if (reason?.kind === 'holiday') off.push(`${city.name} (${reason.name})`);
+    }
+    return off.length > 0 ? `${summary}\nOff for public holiday: ${off.join(', ')}` : summary;
+  };
 
   // Scroll to 9am on initial load
   useEffect(() => {
@@ -340,6 +370,7 @@ export function TimelineGrid() {
                     onMouseDown={() => !isPast && !isTouchDevice && handleMouseDown(index)}
                     onMouseMove={() => !isTouchDevice && handleMouseMove(index)}
                     onClick={(e) => !isPast && isTouchDevice && handleSlotClick(index, e)}
+                    title={isPast ? undefined : getHeatmapTitle(index)}
                   >
                     <div className={`h-10 flex items-center justify-center relative ${heatmapColor}`}>
                       {isSelected && (
@@ -362,6 +393,8 @@ export function TimelineGrid() {
             {/* City rows */}
             {cities.map((city) => {
               const offset = getTimezoneOffset(city.timezone, referenceDate);
+              const holidays = cityHolidays.get(city.id)!;
+              const jurisdiction = formatJurisdiction(city.countryCode, city.subdivision);
 
               return (
                 <tr key={city.id} className="bg-gray-800 border-b border-gray-700">
@@ -372,13 +405,35 @@ export function TimelineGrid() {
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0 mr-2">
                         <div className="font-medium truncate text-sm">{city.name}</div>
-                        <div className="text-xs text-gray-400">{offset}</div>
+                        <div className="text-xs text-gray-400 truncate">
+                          {offset}
+                          <span
+                            className="text-gray-500"
+                            title={`Public holidays for ${jurisdiction}`}
+                          >
+                            {' '}· {city.subdivision || city.countryCode}
+                          </span>
+                        </div>
+                        {holidays.length > 0 && (
+                          <div
+                            className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-amber-300 min-w-0"
+                            title={holidays
+                              .map((h) => `${h.date}: ${h.name} (public holiday in ${jurisdiction})`)
+                              .join('\n')}
+                            data-testid={`holiday-badge-${city.id}`}
+                          >
+                            <CalendarOff size={12} className="shrink-0" />
+                            <span className="truncate">
+                              Off · {holidays.map((h) => h.name).join(' / ')}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-0.5">
                         <button
                           onClick={() => setEditingCity(city)}
                           className="p-1 hover:bg-gray-700 rounded transition-colors"
-                          title="Edit working hours"
+                          title="Edit working hours & holiday region"
                         >
                           <Clock size={14} className="text-gray-400" />
                         </button>
@@ -397,7 +452,8 @@ export function TimelineGrid() {
                   {headerSlots.map(({ index }) => {
                     const isPast = index < firstFutureSlot;
                     const slotData = citySlotData.get(city.id)![index];
-                    const { hour, minutes, isWorking } = slotData;
+                    const { hour, minutes, isWorking, offReason } = slotData;
+                    const holidayName = offReason?.kind === 'holiday' ? offReason.name : null;
                     const inDragRange = isSlotInDragRange(index);
                     const inMeeting = isSlotInMeeting(index);
                     const isHovered = hoveredSlot === index;
@@ -408,6 +464,8 @@ export function TimelineGrid() {
                     let bgColor = 'bg-gray-700';
                     if (isPast) {
                       bgColor = 'bg-gray-800';
+                    } else if (holidayName) {
+                      bgColor = 'holiday-slot';
                     } else if (isWorking) {
                       bgColor = 'bg-green-600';
                     }
@@ -422,6 +480,7 @@ export function TimelineGrid() {
                         onMouseDown={() => !isPast && !isTouchDevice && handleMouseDown(index)}
                         onMouseMove={() => !isTouchDevice && handleMouseMove(index)}
                         onClick={(e) => !isPast && isTouchDevice && handleSlotClick(index, e)}
+                        title={holidayName ? `${holidayName}: public holiday in ${city.name} (${jurisdiction}), off` : undefined}
                       >
                         <div
                           className={`h-12 flex flex-col items-center justify-center relative ${bgColor}`}
@@ -439,7 +498,7 @@ export function TimelineGrid() {
                             <div className="absolute inset-0 bg-blue-400/60 ring-2 ring-blue-400 ring-inset" />
                           )}
                           <span className={`text-[10px] font-medium leading-tight relative z-10 ${
-                            isPast ? 'text-gray-600' : isSelected ? 'text-white' : ''
+                            isPast ? 'text-gray-600' : isSelected ? 'text-white' : holidayName ? 'text-amber-200' : ''
                           }`}>
                             {formatSlot(hour, minutes)}
                           </span>
