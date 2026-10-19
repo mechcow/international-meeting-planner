@@ -200,3 +200,29 @@ test.describe('International Meeting Planner - Responsive Layout', () => {
     await expect(page.getByRole('table')).toBeVisible();
   });
 });
+
+test.describe('International Meeting Planner - Public Holidays', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+  });
+
+  test('should show cities as off on a public holiday', async ({ page }) => {
+    await page.locator('input[type="date"]').fill('2026-12-25');
+
+    // London (a default city) is off for Christmas Day
+    const badge = page.getByTestId('holiday-badge-london');
+    await expect(badge).toBeVisible();
+    await expect(badge).toContainText('Christmas Day');
+  });
+
+  test('should include state holidays for the city region', async ({ page }) => {
+    // King's Birthday is a NSW public holiday (not nationwide) on 8 June 2026
+    await page.locator('input[type="date"]').fill('2026-06-08');
+
+    const badge = page.getByTestId('holiday-badge-sydney');
+    await expect(badge).toBeVisible();
+    await expect(badge).toContainText("King's Birthday");
+  });
+});

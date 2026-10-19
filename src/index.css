@@ -42,6 +42,17 @@ body {
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* Public holiday slots: amber diagonal stripes so "off for a holiday"
+   reads differently from "outside working hours" */
+.holiday-slot {
+  background-color: rgb(120 53 15 / 0.7);
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(245 158 11 / 0.25) 0 4px,
+    transparent 4px 9px
+  );
+}
+
 /* Sticky column styling */
 .sticky-column {
   position: sticky;

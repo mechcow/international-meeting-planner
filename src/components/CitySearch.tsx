@@ -3,6 +3,7 @@ import { Search, Plus } from 'lucide-react';
 import { getTimeZones } from '@vvo/tzdb';
 import { useTimezone } from '../context/TimezoneContext';
 import type { City } from '../types';
+import { inferSubdivision } from '../data/cityJurisdictions';
 
 const timezones = getTimeZones();
 
@@ -107,6 +108,7 @@ export function CitySearch() {
       name: result.name,
       timezone: result.timezone,
       countryCode: result.countryCode,
+      subdivision: inferSubdivision(result.name, result.timezone, result.countryCode) ?? '',
       workStart: 9,
       workEnd: 17,
     };

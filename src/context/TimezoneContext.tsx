@@ -3,6 +3,7 @@ import { getTimeZones } from '@vvo/tzdb';
 import type { City, TimezoneState, MeetingSelection } from '../types';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { defaultCities } from '../data/defaultCities';
+import { inferSubdivision } from '../data/cityJurisdictions';
 
 // Build a map from timezone to country code for migration
 const timezoneToCountry = new Map<string, string>();
@@ -10,12 +11,20 @@ for (const tz of getTimeZones()) {
   timezoneToCountry.set(tz.name, tz.countryCode);
 }
 
-// Migrate cities that don't have countryCode
+// Migrate cities that don't have countryCode or a resolved subdivision
 function migrateCities(cities: City[]): City[] {
   return cities.map(city => {
-    if (city.countryCode) return city;
-    const countryCode = timezoneToCountry.get(city.timezone) || 'US';
-    return { ...city, countryCode };
+    let migrated = city;
+    if (!migrated.countryCode) {
+      const countryCode = timezoneToCountry.get(city.timezone) || 'US';
+      migrated = { ...migrated, countryCode };
+    }
+    if (migrated.subdivision === undefined) {
+      const subdivision =
+        inferSubdivision(migrated.name, migrated.timezone, migrated.countryCode) ?? '';
+      migrated = { ...migrated, subdivision };
+    }
+    return migrated;
   });
 }
 
@@ -52,6 +61,14 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  const updateSubdivision = useCallback((id: string, subdivision: string | undefined) => {
+    setCities((prev) =>
+      prev.map((city) =>
+        city.id === id ? { ...city, subdivision: subdivision ?? '' } : city
+      )
+    );
+  }, []);
+
   const reorderCities = useCallback((fromIndex: number, toIndex: number) => {
     setCities((prev) => {
       const newCities = [...prev];
@@ -68,6 +85,7 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
     addCity,
     removeCity,
     updateWorkingHours,
+    updateSubdivision,
     setReferenceDate,
     reorderCities,
     setMeeting,

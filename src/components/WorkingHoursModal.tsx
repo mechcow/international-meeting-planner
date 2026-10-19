@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useTimezone } from '../context/TimezoneContext';
 import { getTimeOptions } from '../utils/timezoneUtils';
+import { getSubdivisions } from '../utils/holidayUtils';
 import type { City } from '../types';
 
 interface WorkingHoursModalProps {
@@ -12,12 +13,15 @@ interface WorkingHoursModalProps {
 const timeOptions = getTimeOptions();
 
 export function WorkingHoursModal({ city, onClose }: WorkingHoursModalProps) {
-  const { updateWorkingHours } = useTimezone();
+  const { updateWorkingHours, updateSubdivision } = useTimezone();
   const [workStart, setWorkStart] = useState(city.workStart);
   const [workEnd, setWorkEnd] = useState(city.workEnd);
+  const [subdivision, setSubdivision] = useState(city.subdivision ?? '');
+  const [subdivisions] = useState(() => getSubdivisions(city.countryCode));
 
   const handleSave = () => {
     updateWorkingHours(city.id, workStart, workEnd);
+    updateSubdivision(city.id, subdivision);
     onClose();
   };
 
@@ -71,6 +75,29 @@ export function WorkingHoursModal({ city, onClose }: WorkingHoursModalProps) {
               ))}
             </select>
           </div>
+          {subdivisions.length > 0 && (
+            <div>
+              <label htmlFor="holiday-region" className="block text-sm text-gray-400 mb-1">
+                Holiday region
+              </label>
+              <select
+                id="holiday-region"
+                value={subdivision}
+                onChange={(e) => setSubdivision(e.target.value)}
+                className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+              >
+                <option value="">Nationwide holidays only ({city.countryCode})</option>
+                {subdivisions.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name} ({s.code})
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Public holidays in this region are shown as days off.
+              </p>
+            </div>
+          )}
         </div>
         <div className="flex gap-2 mt-6">
           <button
