@@ -52,57 +52,47 @@ export function DateControls() {
 
   const isToday = isSameDay(referenceDate, today);
 
+  const pill = (selected: boolean) =>
+    `px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+      selected ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700'
+    }`;
+
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex items-center gap-1">
-          <button
-            onClick={goToPrevDay}
-            className="p-2 hover:bg-gray-700 rounded transition-colors"
-            title="Previous day"
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <div className="relative">
-            <input
-              type="date"
-              value={format(referenceDate, 'yyyy-MM-dd')}
-              onChange={handleDateChange}
-              className="bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-            />
-          </div>
-          <button
-            onClick={goToNextDay}
-            className="p-2 hover:bg-gray-700 rounded transition-colors"
-            title="Next day"
-          >
-            <ChevronRight size={20} />
-          </button>
-        </div>
+    <div className="flex items-center gap-2">
+      <div className="flex items-center">
         <button
-          onClick={goToToday}
-          className={`flex items-center gap-1 px-3 py-2 rounded text-sm transition-colors ${
-            isToday
-              ? 'bg-blue-600 hover:bg-blue-500'
-              : 'bg-gray-700 hover:bg-gray-600'
-          }`}
+          onClick={goToPrevDay}
+          className="p-1.5 hover:bg-gray-700 rounded transition-colors"
+          title="Previous day"
         >
-          <Calendar size={16} />
-          Today
+          <ChevronLeft size={18} />
+        </button>
+        <input
+          type="date"
+          value={format(referenceDate, 'yyyy-MM-dd')}
+          onChange={handleDateChange}
+          className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:border-blue-500"
+        />
+        <button
+          onClick={goToNextDay}
+          className="p-1.5 hover:bg-gray-700 rounded transition-colors"
+          title="Next day"
+        >
+          <ChevronRight size={18} />
         </button>
       </div>
 
-      {/* Quick day buttons */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {quickDays.map(({ date, label, isSelected }) => (
+      {/* Today + quick day buttons as one segmented control */}
+      <div className="flex items-center gap-0.5 bg-gray-800 border border-gray-700 rounded-lg p-0.5">
+        <button onClick={goToToday} className={`flex items-center gap-1 ${pill(isToday)}`}>
+          <Calendar size={13} />
+          Today
+        </button>
+        {quickDays.map(({ date, label, isSelected }, i) => (
           <button
             key={date.toISOString()}
             onClick={() => setReferenceDate(date)}
-            className={`px-3 py-1.5 rounded text-sm transition-colors ${
-              isSelected
-                ? 'bg-blue-600 hover:bg-blue-500'
-                : 'bg-gray-700 hover:bg-gray-600'
-            }`}
+            className={`${pill(isSelected)} ${i > 0 ? 'hidden xl:inline-block' : ''}`}
           >
             {label}
           </button>

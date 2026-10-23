@@ -146,7 +146,7 @@ test.describe('Mobile - Responsive Design', () => {
 
   test('should display title on mobile', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('img[alt="International Meeting Planner"]')).toBeVisible();
+    await expect(page.getByRole('img', { name: 'International Meeting Planner' })).toBeVisible();
   });
 
   test('should have sticky city column', async ({ page }) => {

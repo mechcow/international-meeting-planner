@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { X, Clock, CalendarOff } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import { useTimezone } from '../context/TimezoneContext';
 import { WorkingHoursModal } from './WorkingHoursModal';
 import {
@@ -28,7 +29,7 @@ interface CityHoliday {
 }
 
 const SLOT_WIDTH = 44;
-const CITY_COL_WIDTH = 180;
+const CITY_COL_WIDTH = 200;
 
 // Heatmap colors based on overlap percentage (0 = red, 100% = green)
 function getHeatmapColor(score: number, total: number, isPast: boolean): string {
@@ -63,6 +64,16 @@ function getFirstFutureSlot(referenceDate: Date): number {
   return currentSlot;
 }
 
+// Position of "now" within today's grid as a fractional slot, or null if not viewing today
+function getNowSlotPosition(referenceDate: Date, now: Date): number | null {
+  const sameDay =
+    now.getFullYear() === referenceDate.getFullYear() &&
+    now.getMonth() === referenceDate.getMonth() &&
+    now.getDate() === referenceDate.getDate();
+  if (!sameDay) return null;
+  return (now.getHours() * 60 + now.getMinutes()) / 30;
+}
+
 export function TimelineGrid() {
   const { cities, referenceDate, meeting, setMeeting, removeCity } = useTimezone();
   const [isDragging, setIsDragging] = useState(false);
@@ -71,6 +82,7 @@ export function TimelineGrid() {
   const [hoveredSlot, setHoveredSlot] = useState<number | null>(null);
   const [editingCity, setEditingCity] = useState<City | null>(null);
   const [firstFutureSlot, setFirstFutureSlot] = useState(() => getFirstFutureSlot(referenceDate));
+  const [now, setNow] = useState(() => new Date());
   // Mobile tap-to-select state
   const [tapStart, setTapStart] = useState<number | null>(null);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
@@ -85,6 +97,12 @@ export function TimelineGrid() {
     }, 60000); // Update every minute
     return () => clearInterval(interval);
   }, [referenceDate]);
+
+  // Live clock for each city's local time
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Pre-compute slot data for all cities and all slots
   const { citySlotData, cityHolidays, overlapScores } = useMemo(() => {
@@ -145,6 +163,18 @@ export function TimelineGrid() {
       scrollContainerRef.current.scrollLeft = scrollPosition;
     }
   }, []); // Only run on mount
+
+  // Bring a selected meeting into view if it's scrolled off (e.g. picked from Suggested times)
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el || !meeting) return;
+    const start = Math.min(meeting.startSlot, meeting.endSlot) * SLOT_WIDTH;
+    const end = (Math.max(meeting.startSlot, meeting.endSlot) + 1) * SLOT_WIDTH;
+    const visibleWidth = el.clientWidth - CITY_COL_WIDTH;
+    if (start < el.scrollLeft || end > el.scrollLeft + visibleWidth) {
+      el.scrollLeft = Math.max(0, (start + end - visibleWidth) / 2);
+    }
+  }, [meeting]);
 
   // Detect touch device on first touch
   useEffect(() => {
@@ -241,6 +271,19 @@ export function TimelineGrid() {
     return tapStart === slotIndex;
   };
 
+  // Vertical "now" line drawn inside whichever slot contains the current time
+  const nowSlotPosition = getNowSlotPosition(referenceDate, now);
+  const renderNowMarker = (slotIndex: number) => {
+    if (nowSlotPosition === null || Math.floor(nowSlotPosition) !== slotIndex) return null;
+    return (
+      <div
+        className="absolute inset-y-0 w-0.5 bg-red-500 z-20 pointer-events-none"
+        style={{ left: `${(nowSlotPosition % 1) * 100}%` }}
+        data-testid="now-marker"
+      />
+    );
+  };
+
   // Combined click handler for both desktop and mobile
   const handleSlotClick = useCallback((slotIndex: number, e: React.MouseEvent | React.TouchEvent) => {
     // On touch devices, use tap-to-select
@@ -305,9 +348,12 @@ export function TimelineGrid() {
           <thead>
             <tr className="bg-gray-800 border-b border-gray-600">
               <th
-                className="sticky left-0 z-20 bg-gray-800 border-r border-gray-600 p-2 text-left"
+                className="sticky left-0 z-30 bg-gray-800 border-r border-gray-600 px-2 py-1 text-left"
               >
-                <span className="text-sm font-medium text-gray-400">City</span>
+                <div className="flex items-baseline justify-between gap-2 text-xs font-medium text-gray-400">
+                  <span>City</span>
+                  <span>Local time</span>
+                </div>
               </th>
               {headerSlots.map(({ hours, minutes, index }) => {
                 const isPast = index < firstFutureSlot;
@@ -330,7 +376,8 @@ export function TimelineGrid() {
                         }`}
                       />
                     )}
-                    <div className={`h-10 flex items-center justify-center text-[9px] relative z-10 ${
+                    {renderNowMarker(index)}
+                    <div className={`h-9 flex items-center justify-center text-[9px] relative z-10 ${
                       isPast ? 'text-gray-600' : isSelected ? 'text-white font-medium' : 'text-gray-400'
                     }`}>
                       {formatSlot(hours, minutes)}
@@ -345,9 +392,11 @@ export function TimelineGrid() {
           <tbody>
             {/* Heatmap row */}
             <tr className="bg-gray-900 border-b border-gray-600">
-              <td className="sticky left-0 z-20 bg-gray-900 border-r border-gray-600 p-2">
-                <div className="font-medium text-sm text-gray-300">Best Times</div>
-                <div className="text-xs text-gray-500">{cities.length} cities</div>
+              <td className="sticky left-0 z-30 bg-gray-900 border-r border-gray-600 px-2 py-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-medium text-sm text-gray-300">Best Times</span>
+                  <span className="text-xs text-gray-500">{cities.length} cities</span>
+                </div>
               </td>
               {headerSlots.map(({ index }) => {
                 const isPast = index < firstFutureSlot;
@@ -372,7 +421,8 @@ export function TimelineGrid() {
                     onClick={(e) => !isPast && isTouchDevice && handleSlotClick(index, e)}
                     title={isPast ? undefined : getHeatmapTitle(index)}
                   >
-                    <div className={`h-10 flex items-center justify-center relative ${heatmapColor}`}>
+                    <div className={`h-9 flex items-center justify-center relative ${heatmapColor}`}>
+                      {renderNowMarker(index)}
                       {isSelected && (
                         <div className={`absolute inset-0 ${inDragRange ? 'bg-blue-500/50' : 'bg-blue-600/40'}`} />
                       )}
@@ -399,53 +449,57 @@ export function TimelineGrid() {
               return (
                 <tr key={city.id} className="bg-gray-800 border-b border-gray-700">
                   {/* City name column */}
-                  <td
-                    className="sticky left-0 z-20 bg-gray-800 border-r border-gray-600 p-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1 min-w-0 mr-2">
-                        <div className="font-medium truncate text-sm">{city.name}</div>
-                        <div className="text-xs text-gray-400 truncate">
-                          {offset}
-                          <span
-                            className="text-gray-500"
-                            title={`Public holidays for ${jurisdiction}`}
-                          >
-                            {' '}· {city.subdivision || city.countryCode}
-                          </span>
-                        </div>
-                        {holidays.length > 0 && (
-                          <div
-                            className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-amber-300 min-w-0"
-                            title={holidays
-                              .map((h) => `${h.date}: ${h.name} (public holiday in ${jurisdiction})`)
-                              .join('\n')}
-                            data-testid={`holiday-badge-${city.id}`}
-                          >
-                            <CalendarOff size={12} className="shrink-0" />
-                            <span className="truncate">
-                              Off · {holidays.map((h) => h.name).join(' / ')}
-                            </span>
-                          </div>
-                        )}
+                  <td className="group sticky left-0 z-30 bg-gray-800 border-r border-gray-600 px-2 py-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-medium truncate text-sm">{city.name}</span>
+                      <span className="shrink-0 font-mono text-sm text-gray-200 tabular-nums">
+                        {formatInTimeZone(now, city.timezone, 'h:mm a')}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="text-xs text-gray-400 truncate min-w-0">
+                        {offset}
+                        <span
+                          className="text-gray-500"
+                          title={`Public holidays for ${jurisdiction}`}
+                        >
+                          {' '}· {city.subdivision || city.countryCode}
+                        </span>
+                        <span className="text-gray-500">
+                          {' '}· {formatInTimeZone(now, city.timezone, 'EEE d')}
+                        </span>
                       </div>
-                      <div className="flex items-center gap-0.5">
+                      <div className="flex items-center shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
                         <button
                           onClick={() => setEditingCity(city)}
-                          className="p-1 hover:bg-gray-700 rounded transition-colors"
+                          className="p-1 -my-1 hover:bg-gray-700 rounded transition-colors"
                           title="Edit working hours & holiday region"
                         >
-                          <Clock size={14} className="text-gray-400" />
+                          <Clock size={13} className="text-gray-400" />
                         </button>
                         <button
                           onClick={() => removeCity(city.id)}
-                          className="p-1 hover:bg-gray-700 rounded transition-colors"
+                          className="p-1 -my-1 hover:bg-gray-700 rounded transition-colors"
                           title="Remove city"
                         >
-                          <X size={14} className="text-gray-400" />
+                          <X size={13} className="text-gray-400" />
                         </button>
                       </div>
                     </div>
+                    {holidays.length > 0 && (
+                      <div
+                        className="flex items-center gap-1 text-[11px] font-medium text-amber-300 min-w-0"
+                        title={holidays
+                          .map((h) => `${h.date}: ${h.name} (public holiday in ${jurisdiction})`)
+                          .join('\n')}
+                        data-testid={`holiday-badge-${city.id}`}
+                      >
+                        <CalendarOff size={12} className="shrink-0" />
+                        <span className="truncate">
+                          Off · {holidays.map((h) => h.name).join(' / ')}
+                        </span>
+                      </div>
+                    )}
                   </td>
 
                   {/* Time slots - simple green/gray, past slots darker */}
@@ -485,6 +539,7 @@ export function TimelineGrid() {
                         <div
                           className={`h-12 flex flex-col items-center justify-center relative ${bgColor}`}
                         >
+                          {renderNowMarker(index)}
                           {isSelected && (
                             <div
                               className={`absolute inset-0 ${
