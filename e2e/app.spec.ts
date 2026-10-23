@@ -12,7 +12,7 @@ test.describe('International Meeting Planner - Basic Functionality', () => {
     await page.goto('/');
 
     // Logo image with alt text
-    await expect(page.locator('img[alt="International Meeting Planner"]')).toBeVisible();
+    await expect(page.getByRole('img', { name: 'International Meeting Planner' })).toBeVisible();
   });
 
   test('should display default cities', async ({ page }) => {
@@ -194,7 +194,7 @@ test.describe('International Meeting Planner - Responsive Layout', () => {
     await page.goto('/');
 
     // App logo should be visible
-    await expect(page.locator('img[alt="International Meeting Planner"]')).toBeVisible();
+    await expect(page.getByRole('img', { name: 'International Meeting Planner' })).toBeVisible();
 
     // Timeline should be present
     await expect(page.getByRole('table')).toBeVisible();
